@@ -1,0 +1,90 @@
+TRABAJO ENCARGADO - ANALÍTICA DE DATOS
+Análisis exploratorio de la ejecución presupuestal de las universidades
+públicas del Perú, 2025: caso de la Universidad Nacional Agraria de la Selva
+
+Integrantes:
+  Elida Andrea Campos Flores
+  Nicole Geraldine Díaz Gumán
+  Darikson Anyelo Enrique Debarbiere
+
+Tingo María, octubre de 2026
+==========================================================================
+
+CONTENIDO (en orden de lectura)
+
+  01_Informe_del_EDA/
+        Informe del análisis exploratorio de datos (PDF): fuentes de los
+        datos, preparación, desarrollo de los 9 pasos del EDA y
+        conclusiones. La carpeta archivos_fuente contiene los archivos
+        para generarlo.
+
+  02_EDA/
+        Cuaderno del análisis exploratorio (9 pasos de Peng y Matsui).
+        .qmd   código fuente
+        .html  resultado con el código plegable
+        .pdf   versión para imprimir
+
+  03_Scripts/
+        01_descargar_gasto_mef.py          obtención de los datos del MEF
+        02_preparar_presupuesto.R          preparación de la base
+        03_consultar_consulta_amigable.py  totales oficiales para validar
+
+  04_Datos/
+        procesado/  base lista para el EDA (.rds) y resúmenes
+        raw/        totales oficiales de la Consulta Amigable
+
+FUENTES DE DATOS
+
+  1. Ministerio de Economía y Finanzas - Presupuesto y Ejecución de Gasto,
+     archivo 2025-Gasto-Mensual.csv (versión del 22/10/2026).
+     https://www.datosabiertos.gob.pe/dataset/presupuesto-y-ejecuci%C3%B3n-de-gasto
+     https://fs.datosabiertos.mef.gob.pe/datastorefiles/2025-Gasto-Mensual.csv
+
+  2. Ministerio de Economía y Finanzas - Consulta Amigable (2025, actividades
+     y proyectos, Gobierno Nacional, sector Educación, por pliego),
+     consultada el 26/10/2026.
+     https://apps5.mineco.gob.pe/transparencia/Navegador/default.aspx
+
+QUÉ SE HIZO
+
+  El informe de 01_Informe_del_EDA lo explica en detalle:
+    Capítulo II   de dónde salieron los datos y cómo se prepararon.
+    Capítulo III  qué se hizo y qué se encontró en cada uno de los 9 pasos.
+    Capítulo IV   conclusiones.
+    Anexo D       cómo replicar el análisis.
+
+CÓMO REPLICAR EL TRABAJO
+
+  Programas: R 4.5 con los paquetes data.table, dplyr, janitor, ggplot2 y
+  knitr; RStudio (incluye Quarto); Python 3.10 o superior; curl (incluido
+  en Windows 10 y 11).
+
+  Instalar los paquetes de R (una sola vez, en la consola de R):
+    install.packages(c("data.table", "dplyr", "janitor", "ggplot2", "knitr"))
+
+  Comandos (en una terminal abierta en esta carpeta, Entrega):
+
+  1. Obtener las filas de las universidades del archivo del MEF:
+     python 03_Scripts/01_descargar_gasto_mef.py https://fs.datosabiertos.mef.gob.pe/datastorefiles/2025-Gasto-Mensual.csv 04_Datos/raw/mef_2025/gasto_2025_universidades.csv
+
+  2. Preparar la base (genera los archivos de 04_Datos/procesado):
+     Rscript 03_Scripts/02_preparar_presupuesto.R
+     (o en RStudio, con Entrega como directorio de trabajo:
+      source("03_Scripts/02_preparar_presupuesto.R"))
+
+  3. Obtener los totales de la Consulta Amigable:
+     python 03_Scripts/03_consultar_consulta_amigable.py sesion.txt 04_Datos/raw/consulta_amigable_educacion_2025.csv
+
+  4. Generar el EDA: abrir 02_EDA/EDA_presupuesto_universidades.qmd en
+     RStudio y pulsar "Render".
+
+  5. Generar el informe: abrir
+     01_Informe_del_EDA/archivos_fuente/informe_EDA_ejecucion_presupuestal_2025.qmd
+     en RStudio y pulsar "Render".
+
+  Para revisar el EDA no hace falta repetir los pasos 1 a 3: 04_Datos ya
+  contiene la base preparada y los totales oficiales. Debe conservarse
+  esta estructura de carpetas, porque el EDA y el informe leen los datos
+  desde 04_Datos. El MEF actualiza sus datos periódicamente; las cifras
+  del trabajo corresponden al archivo del 22/10/2026 y a la Consulta
+  Amigable del 26/10/2026.

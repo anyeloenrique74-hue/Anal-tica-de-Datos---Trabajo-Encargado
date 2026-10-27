@@ -1,0 +1,435 @@
+---
+title: "Análisis exploratorio: ejecución presupuestal de las universidades públicas en 2025"
+subtitle: "Caso principal: Universidad Nacional Agraria de la Selva (UNAS)"
+lang: es
+author:
+  - Elida Andrea Campos Flores
+  - Nicole Geraldine Díaz Gumán
+  - Darikson Anyelo Enrique Debarbiere
+date: 2026-10-01
+date-format: "MMMM [de] YYYY"
+format:
+  html:
+    toc: true
+    toc-title: "Contenido"
+    number-sections: true
+    code-fold: true
+    code-summary: "Ver código"
+    embed-resources: true
+    fig-width: 8
+execute:
+  warning: false
+  message: false
+---
+
+```{r}
+#| label: setup
+#| include: false
+library(dplyr)
+library(ggplot2)
+
+# Colores: gris para el contexto y un solo azul para la UNAS
+azul <- "#2a78d6"
+gris <- "#c9c8c2"
+gris_linea <- "#8f8e88"
+texto <- "#0b0b0b"
+texto2 <- "#52514e"
+
+tema <- theme_minimal(base_size = 11) +
+  theme(
+    plot.title = element_text(face = "bold", color = texto),
+    plot.subtitle = element_text(color = texto2),
+    plot.caption = element_text(color = texto2, hjust = 0),
+    axis.text = element_text(color = texto2),
+    panel.grid.minor = element_blank(),
+    plot.title.position = "plot",
+    plot.caption.position = "plot"
+  )
+fuente_mef <- "Fuente: MEF, Presupuesto y Ejecución de Gasto 2025 (datos abiertos). Elaboración propia."
+fuente_ca <- "Fuente: MEF, Consulta Amigable (consultada el 26/10/2026). Elaboración propia."
+
+# "U.N. AGRARIA DE LA SELVA" -> "Agraria de la Selva"
+nombre_corto <- function(x) {
+  x <- tools::toTitleCase(tolower(sub("^U[.] ?N[.] ", "", x)))
+  for (p in c("De", "Del", "La", "Las", "Los", "Y")) {
+    x <- gsub(paste0(" ", p, " "), paste0(" ", tolower(p), " "), x)
+  }
+  x
+}
+
+# "BIENES Y SERVICIOS" -> "Bienes y servicios"
+oracion <- function(x) paste0(substr(x, 1, 1), tolower(substring(x, 2)))
+```
+
+Este documento sigue la lista de verificación del análisis exploratorio de datos del capítulo 4 de *The Art of Data Science* (Peng y Matsui). Cada sección corresponde a uno de sus 9 pasos. Las fuentes de los datos, su preparación y los resultados se describen en el *Informe del análisis exploratorio de datos*.
+
+# Formular la pregunta
+
+Nuestra pregunta principal es:
+
+> **¿Qué tan bien ejecutó la UNAS su presupuesto en 2025 en comparación con las demás universidades públicas, y en qué lo gastó?**
+
+Para responderla la dividimos en preguntas más pequeñas:
+
+1. ¿Qué porcentaje de su presupuesto (PIM) llegó a devengar la UNAS y en qué puesto queda?
+2. ¿En qué tipo de gasto se va el presupuesto de la UNAS y en qué se diferencia del resto?
+3. ¿Cómo avanzó el gasto mes a mes?
+4. ¿Las universidades con más presupuesto ejecutan menos?
+
+Antes de mirar los datos, **esperábamos** que la UNAS estuviera cerca del promedio, que diciembre fuera el mes con más gasto y que las universidades más grandes ejecutaran un porcentaje menor, porque manejan más proyectos.
+
+# Leer los datos
+
+Usamos la base preparada con el script `03_Scripts/02_preparar_presupuesto.R`, que viene del archivo `2025-Gasto-Mensual.csv` del MEF.
+
+```{r}
+#| label: leer
+gasto <- readRDS("../04_Datos/procesado/presupuesto_universidades_2025.rds")
+```
+
+# Revisar la estructura
+
+```{r}
+#| label: estructura
+dim(gasto)
+gasto %>%
+  select(pliego, universidad, mes_eje, tipo_fila, generica_nombre,
+         fuente_financiamiento_nombre, tipo_act_proy_nombre,
+         monto_pia, monto_pim, monto_devengado) %>%
+  glimpse()
+```
+
+La base tiene `r format(nrow(gasto), big.mark = ",")` filas y `r ncol(gasto)` columnas. Los códigos (pliego, meta, clasificadores) son texto y los seis montos son numéricos. La variable `tipo_fila` separa dos clases de filas:
+
+```{r}
+#| label: tipo-fila
+count(gasto, tipo_fila)
+```
+
+Las filas de **presupuesto del año** (mes 0) son las únicas que traen PIA y PIM. Las de **ejecución del mes** (meses 1 a 12) traen certificado, compromiso, devengado y girado.
+
+# Mirar el inicio y el final de los datos
+
+```{r}
+#| label: inicio-final
+cols <- c("universidad", "mes_eje", "generica_nombre", "monto_pim", "monto_devengado")
+head(gasto[, cols], 5)
+tail(gasto[, cols], 5)
+```
+
+Al revisar el inicio y el final notamos que el archivo **no sigue un orden útil para nosotros**: empieza con filas de setiembre (mes 9) de una universidad y termina con filas de presupuesto (mes 0) de otra. También se ve que en las filas de ejecución el PIM es 0 y en las de presupuesto el devengado es 0, lo que confirma lo descrito en el paso anterior. Por eso todos los cálculos los hacemos agrupando, nunca tomando filas por su posición.
+
+# Revisar las «n»
+
+```{r}
+#| label: conteos
+c(universidades = n_distinct(gasto$pliego),
+  meses = n_distinct(gasto$mes_eje),
+  genericas = n_distinct(gasto$generica_nombre),
+  fuentes = n_distinct(gasto$fuente_financiamiento_nombre))
+
+# Valores faltantes en los montos
+sapply(gasto[, c("monto_pia", "monto_pim", "monto_devengado", "monto_girado")],
+       function(x) sum(is.na(x)))
+
+# Filas con devengado negativo (anulaciones o correcciones)
+sum(gasto$monto_devengado < 0)
+```
+
+Tenemos `r n_distinct(gasto$pliego)` universidades y `r n_distinct(gasto$mes_eje)` valores de mes (del 0 al 12), sin montos faltantes. Hay filas con devengado negativo: son correcciones de registros anteriores y las conservamos, porque al sumar se compensan con el registro original.
+
+También revisamos que las etapas del gasto respeten su orden lógico (lo girado no puede superar lo devengado, ni lo devengado al PIM):
+
+```{r}
+#| label: etapas
+etapas <- gasto %>%
+  group_by(pliego) %>%
+  summarise(pim = sum(monto_pim), dev = sum(monto_devengado), gir = sum(monto_girado))
+c(devengado_mayor_que_pim = sum(etapas$dev > etapas$pim + 1),
+  girado_mayor_que_devengado = sum(etapas$gir > etapas$dev + 1))
+
+# ¿Cuál es el caso con girado mayor que devengado?
+etapas %>%
+  filter(gir > dev + 1) %>%
+  mutate(universidad = gasto$universidad[match(pliego, gasto$pliego)], diferencia = gir - dev)
+```
+
+Ninguna universidad devengó más que su PIM. Solo hay **un caso con girado mayor que devengado**: la Universidad Jorge Basadre Grohmann, por unos S/ 12 mil. Al revisar la Consulta Amigable (paso 6) vimos que allí aparece igual, así que es un dato de la fuente y no un error nuestro. Puede deberse a pagos de obligaciones de años anteriores. Como la diferencia es mínima, la dejamos como está.
+
+# Validar con una fuente externa
+
+Comparamos nuestros totales por universidad con la **Consulta Amigable del MEF**, la herramienta oficial de consulta del presupuesto. La descargamos con el script `03_Scripts/03_consultar_consulta_amigable.py` (2025, Gobierno Nacional, sector Educación, por pliego).
+
+```{r}
+#| label: validacion
+ca <- read.csv("../04_Datos/raw/consulta_amigable_educacion_2025.csv",
+               colClasses = c(pliego = "character"), encoding = "UTF-8") %>%
+  filter(as.integer(pliego) >= 510) %>%
+  mutate(universidad = nombre_corto(pliego_nombre))
+
+comparacion <- ca %>%
+  left_join(etapas, by = "pliego") %>%
+  mutate(dif_pim = pim.x - pim.y, dif_dev = devengado - dev)
+
+c(universidades_consulta_amigable = nrow(ca),
+  coinciden_al_sol = sum(abs(comparacion$dif_pim) <= 1 & abs(comparacion$dif_dev) <= 1, na.rm = TRUE),
+  diferencia_menor_a_S300 = sum(abs(comparacion$dif_pim) <= 1 & abs(comparacion$dif_dev) > 1 &
+                                  abs(comparacion$dif_dev) < 300, na.rm = TRUE))
+
+comparacion %>%
+  filter(is.na(pim.y) | abs(dif_pim) > 1 | abs(dif_dev) > 300) %>%
+  transmute(pliego, pliego_nombre, pim_consulta = pim.x, pim_nuestro = pim.y, dif_pim)
+```
+
+```{r}
+#| label: resumen-validacion
+#| include: false
+n_coinc <- sum(abs(comparacion$dif_pim) <= 1 & abs(comparacion$dif_dev) <= 1, na.rm = TRUE)
+n_red <- sum(abs(comparacion$dif_pim) <= 1 & abs(comparacion$dif_dev) > 1 &
+               abs(comparacion$dif_dev) < 300, na.rm = TRUE)
+unas_ca <- filter(comparacion, pliego == "526")
+```
+
+La validación muestra que nuestra base reproduce las cifras oficiales:
+
+- **La UNAS coincide exactamente**: PIM de S/ `r format(unas_ca$pim.x, big.mark = ",")` y devengado de S/ `r format(round(unas_ca$devengado), big.mark = ",")` en ambas fuentes.
+- **`r n_coinc` universidades coinciden al sol** y `r n_red` difieren en menos de S/ 300, por redondeo.
+- La tabla de diferencias mayores está vacía: no hay universidades con montos distintos.
+
+Por eso usamos la Consulta Amigable para comparar el avance de las `r nrow(ca)` universidades y nuestra base para el detalle por mes, tipo de gasto y fuente.
+
+# Hacer gráficos
+
+## ¿Cuánto ejecutó cada universidad?
+
+```{r}
+#| label: fig-distribucion
+#| fig-height: 3.6
+avance_conjunto <- 100 * sum(ca$devengado) / sum(ca$pim)
+unas <- filter(ca, pliego == "526")
+
+ggplot(ca, aes(x = avance_pct)) +
+  geom_histogram(binwidth = 5, boundary = 0, fill = gris, color = "white") +
+  geom_vline(xintercept = unas$avance_pct, color = azul, linewidth = 1) +
+  annotate("text", x = unas$avance_pct + 1, y = Inf, vjust = 1.5, hjust = 0, color = azul, fontface = "bold",
+           label = sprintf("UNAS:\n%.1f %%", unas$avance_pct)) +
+  scale_x_continuous(breaks = seq(30, 100, 10), labels = function(x) paste0(x, " %"),
+                     limits = c(30, 112)) +
+  labs(title = sprintf("La mayoría de universidades ejecutó entre 90 %% y 100 %%; la mediana fue %.1f %%",
+                       median(ca$avance_pct)),
+       subtitle = "Número de universidades según su avance de ejecución (devengado / PIM), 65 universidades",
+       x = NULL, y = "Universidades", caption = fuente_ca) +
+  tema
+```
+
+La distribución está **cargada hacia la derecha**: la mayoría ejecuta más del 90 %, y unas pocas universidades se quedan muy atrás, por debajo del 70 %. La UNAS está en el grupo más alto.
+
+```{r}
+#| label: fig-ranking
+#| fig-height: 9.5
+ranking <- ca %>%
+  filter(pim >= 20e6) %>%
+  arrange(desc(devengado / pim)) %>%
+  mutate(puesto = row_number(), es_unas = pliego == "526",
+         universidad = reorder(universidad, devengado / pim))
+puesto_unas <- ranking$puesto[ranking$es_unas]
+
+# La línea del promedio va detrás de las barras para no tapar los porcentajes
+ggplot(ranking, aes(x = avance_pct, y = universidad, fill = es_unas)) +
+  geom_vline(xintercept = avance_conjunto, linetype = "dashed", color = texto2) +
+  geom_col(width = 0.75) +
+  annotate("text", x = avance_conjunto - 1, y = 1, hjust = 1, size = 3.2, color = texto2,
+           label = sprintf("Todas las universidades: %.1f %%", avance_conjunto)) +
+  geom_text(aes(label = sprintf("%.1f %%", avance_pct), color = es_unas,
+                fontface = if_else(es_unas, "bold", "plain")),
+            hjust = 1.1, size = 2.6) +
+  scale_fill_manual(values = c(`TRUE` = azul, `FALSE` = gris), guide = "none") +
+  scale_color_manual(values = c(`TRUE` = "white", `FALSE` = texto), guide = "none") +
+  scale_x_continuous(limits = c(0, 114), breaks = seq(0, 100, 20),
+                     labels = function(x) paste0(x, " %"), expand = c(0, 0)) +
+  labs(title = sprintf("La UNAS quedó en el puesto %d de %d", puesto_unas, nrow(ranking)),
+       subtitle = "Avance de ejecución de las universidades con PIM de S/ 20 millones o más",
+       x = NULL, y = NULL, caption = fuente_ca) +
+  tema +
+  theme(panel.grid.major.y = element_blank(), axis.text.y = element_text(size = 7.5))
+```
+
+Dejamos fuera del ranking a las universidades con menos de S/ 20 millones, porque varias son nuevas, tienen presupuestos menores a S/ 2 millones y llegan fácilmente al 100 %.
+
+## ¿En qué gasta la UNAS?
+
+```{r}
+#| label: fig-genericas
+#| fig-height: 4
+composicion <- gasto %>%
+  filter(mes_eje == 0) %>%
+  mutate(grupo = if_else(es_unas, "UNAS", "Todas las universidades")) %>%
+  bind_rows(filter(., grupo == "UNAS") %>% mutate(grupo = "Todas las universidades")) %>%
+  group_by(grupo, generica_nombre) %>%
+  summarise(pim = sum(monto_pim), .groups = "drop_last") %>%
+  mutate(porcentaje = 100 * pim / sum(pim)) %>%
+  group_by(generica_nombre) %>%
+  filter(any(grupo == "Todas las universidades" & porcentaje >= 1)) %>%
+  ungroup() %>%
+  mutate(generica = oracion(generica_nombre),
+         generica = reorder(generica, porcentaje),
+         grupo = factor(grupo, levels = c("Todas las universidades", "UNAS")))
+
+ggplot(composicion, aes(x = porcentaje, y = generica, fill = grupo)) +
+  geom_col(position = position_dodge(width = 0.8), width = 0.75) +
+  geom_text(aes(label = sprintf("%.1f %%", porcentaje)), position = position_dodge(width = 0.8),
+            hjust = -0.15, size = 3, color = texto2) +
+  scale_fill_manual(values = c(UNAS = azul, `Todas las universidades` = gris), name = NULL) +
+  scale_x_continuous(limits = c(0, 52), labels = function(x) paste0(x, " %"), expand = c(0, 0)) +
+  labs(title = "La UNAS destina a inversiones 13 puntos más que el conjunto",
+       subtitle = "Distribución del PIM por genérica de gasto (genéricas con 1 % o más)",
+       x = NULL, y = NULL, caption = fuente_mef) +
+  tema +
+  theme(legend.position = "top", legend.justification = "left", panel.grid.major.y = element_blank())
+```
+
+Las universidades en conjunto gastan sobre todo en **personal** (44 % del PIM). La UNAS, en cambio, reparte su presupuesto casi por igual entre personal (38 %) e **inversiones** (40 %, «adquisición de activos no financieros»). Esto llama la atención porque las inversiones suelen ser lo más difícil de ejecutar, como vemos en el paso 8.
+
+## ¿Cómo avanzó el gasto en el año?
+
+```{r}
+#| label: fig-mensual
+#| fig-height: 4.3
+mensual <- bind_rows(
+  gasto %>% filter(es_unas) %>% mutate(grupo = "UNAS"),
+  gasto %>% mutate(grupo = "Todas las universidades")
+) %>%
+  group_by(grupo) %>%
+  mutate(pim = sum(monto_pim)) %>%
+  filter(mes_eje > 0) %>%
+  group_by(grupo, mes_eje, pim) %>%
+  summarise(devengado = sum(monto_devengado), .groups = "drop") %>%
+  arrange(grupo, mes_eje) %>%
+  group_by(grupo) %>%
+  mutate(avance_acum = 100 * cumsum(devengado) / pim,
+         parte_del_anio = 100 * devengado / sum(devengado)) %>%
+  ungroup()
+
+dic <- filter(mensual, mes_eje == 12) %>%
+  mutate(y_etiqueta = avance_acum + if_else(grupo == "UNAS", 6, -6))
+meses <- c("Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Set", "Oct", "Nov", "Dic")
+
+ggplot(mensual, aes(x = mes_eje, y = avance_acum, color = grupo)) +
+  geom_line(linewidth = 1) +
+  geom_point(size = 2) +
+  geom_text(data = dic, aes(y = y_etiqueta, label = sprintf("%s:\n%.1f %%", grupo, avance_acum)),
+            hjust = 0, nudge_x = 0.25, size = 3.2, lineheight = 0.9, show.legend = FALSE) +
+  scale_color_manual(values = c(UNAS = azul, `Todas las universidades` = gris_linea), guide = "none") +
+  scale_x_continuous(breaks = 1:12, labels = meses, limits = c(1, 15)) +
+  scale_y_continuous(limits = c(0, 112), breaks = seq(0, 100, 20), labels = function(x) paste0(x, " %")) +
+  labs(title = sprintf("Diciembre concentró el %.1f %% del gasto del año de las universidades",
+                       dic$parte_del_anio[dic$grupo == "Todas las universidades"]),
+       subtitle = "Devengado acumulado como porcentaje del PIM, 2025",
+       x = NULL, y = NULL, caption = fuente_mef) +
+  tema
+```
+
+Se confirma lo que esperábamos: el gasto se acelera al final del año y **diciembre es el mes con más devengado**. La UNAS va por encima del conjunto casi todo el año, salvo por un salto en marzo y una caída en abril que revisamos en el paso 9.
+
+# Probar primero la solución fácil
+
+La explicación más simple que se nos ocurrió es que **las universidades con más presupuesto ejecutan menos**, porque tienen más proyectos y más trámites. La probamos con las 65 universidades de la Consulta Amigable:
+
+```{r}
+#| label: fig-tamano
+#| fig-height: 4.3
+# Se usa el avance sin redondear (devengado / PIM) para que coincida con el informe
+prueba <- cor.test(log10(ca$pim), 100 * ca$devengado / ca$pim, method = "spearman", exact = FALSE)
+prueba
+
+ggplot(ca, aes(x = pim / 1e6, y = avance_pct)) +
+  geom_point(data = filter(ca, pliego != "526"), color = gris_linea, size = 2.2, alpha = 0.8) +
+  geom_point(data = unas, color = azul, size = 3.2) +
+  annotate("text", x = unas$pim / 1e6, y = 106, label = "UNAS",
+           color = azul, fontface = "bold", size = 3.4) +
+  scale_x_log10(breaks = c(0.1, 1, 10, 100, 1000), labels = c("S/ 0.1 M", "S/ 1 M", "S/ 10 M", "S/ 100 M", "S/ 1,000 M")) +
+  scale_y_continuous(limits = c(35, 108), breaks = seq(40, 100, 20), labels = function(x) paste0(x, " %")) +
+  labs(title = "El tamaño del presupuesto no explica el avance",
+       subtitle = sprintf("PIM (escala logarítmica) frente al avance de ejecución, 65 universidades. Spearman: rho = %.2f, p = %.2f",
+                          prueba$estimate, prueba$p.value),
+       x = "PIM", y = "Avance", caption = fuente_ca) +
+  tema +
+  theme(plot.margin = margin(5.5, 25, 5.5, 5.5))
+```
+
+La correlación de Spearman es prácticamente cero (rho = `r sprintf("%.2f", prueba$estimate)`, p = `r sprintf("%.2f", prueba$p.value)`): **no hay relación entre el tamaño del presupuesto y el avance**. La explicación fácil queda descartada.
+
+Probamos entonces la segunda idea: ¿los **proyectos de inversión** se ejecutan peor que las actividades del día a día?
+
+```{r}
+#| label: proyectos
+tipo <- gasto %>%
+  group_by(es_unas, tipo_act_proy_nombre) %>%
+  summarise(pim = sum(monto_pim), dev = sum(monto_devengado), .groups = "drop") %>%
+  bind_rows(gasto %>% group_by(tipo_act_proy_nombre) %>%
+              summarise(pim = sum(monto_pim), dev = sum(monto_devengado)) %>%
+              mutate(es_unas = NA)) %>%
+  mutate(grupo = case_when(is.na(es_unas) ~ "Todas las universidades", es_unas ~ "UNAS")) %>%
+  filter(!is.na(grupo)) %>%
+  group_by(grupo) %>%
+  mutate(parte_del_pim = round(100 * pim / sum(pim), 1), avance = round(100 * dev / pim, 1)) %>%
+  ungroup() %>%
+  select(grupo, tipo = tipo_act_proy_nombre, pim_millones = pim, parte_del_pim, avance) %>%
+  mutate(pim_millones = round(pim_millones / 1e6, 1))
+knitr::kable(tipo, col.names = c("Grupo", "Tipo", "PIM (S/ millones)", "% del PIM", "Avance (%)"))
+```
+
+Aquí sí hay una diferencia clara: en el conjunto, los **proyectos se ejecutan bastante menos que las actividades** (alrededor de 79 % frente a 93 %). Lo destacable es que la UNAS tiene una parte mucho mayor de su presupuesto en proyectos y aun así los ejecutó casi por completo. Esto explica buena parte de su buen resultado: no tiene un «freno» en sus inversiones como muchas otras universidades.
+
+# Preguntas de seguimiento
+
+## ¿Qué pasó en la UNAS en marzo y abril?
+
+En el gráfico mensual la UNAS sube a 36 % en marzo y baja a 23 % en abril, algo imposible si solo se sumara gasto. Lo revisamos por genérica:
+
+```{r}
+#| label: fig-marzo-abril
+#| fig-height: 3.8
+unas_mes <- gasto %>%
+  filter(es_unas, mes_eje > 0) %>%
+  mutate(rubro = if_else(generica_nombre == "PERSONAL Y OBLIGACIONES SOCIALES",
+                         "Personal", "Resto de genéricas")) %>%
+  group_by(mes_eje, rubro) %>%
+  summarise(devengado = sum(monto_devengado) / 1e6, .groups = "drop")
+
+ggplot(unas_mes, aes(x = factor(mes_eje, labels = meses), y = devengado, fill = rubro)) +
+  geom_col(width = 0.7) +
+  geom_hline(yintercept = 0, color = texto2) +
+  scale_fill_manual(values = c(Personal = azul, `Resto de genéricas` = gris), name = NULL) +
+  scale_y_continuous(labels = function(x) paste0("S/ ", x, " M")) +
+  labs(title = "El salto de marzo y la caída de abril son de planillas de personal",
+       subtitle = "Devengado mensual de la UNAS, 2025",
+       x = NULL, y = NULL, caption = fuente_mef) +
+  tema +
+  theme(legend.position = "top", legend.justification = "left")
+
+gasto %>%
+  filter(es_unas, mes_eje %in% 3:4, generica_nombre == "PERSONAL Y OBLIGACIONES SOCIALES") %>%
+  group_by(mes_eje, especifica_det_nombre) %>%
+  summarise(devengado_millones = round(sum(monto_devengado) / 1e6, 2), .groups = "drop") %>%
+  filter(abs(devengado_millones) >= 0.1) %>%
+  arrange(mes_eje, devengado_millones)
+```
+
+Todo el movimiento está en **personal**: en marzo se devengaron unos S/ 19 millones en planillas (sobre todo personal docente nombrado y contratado) y en abril se registraron S/ 13.7 millones en negativo en esas mismas partidas. Nuestra interpretación es que en marzo se registró por adelantado el devengado de varios meses de planilla y en abril se corrigió. Es un **ajuste contable**, no dinero que se gastó y se devolvió. Para el análisis anual no cambia nada, porque los montos se compensan.
+
+## Otras preguntas que quedan abiertas
+
+- ¿Por qué las universidades de Arte Diego Quispe Tito del Cusco, Tayacaja y Quillabamba ejecutaron menos del 55 %? Sería útil revisar qué proyectos no avanzaron.
+- ¿La UNAS mantiene este nivel otros años? Con el mismo script se puede descargar 2024 y comparar.
+- ¿En qué proyectos específicos invirtió la UNAS sus S/ 38 millones? La base tiene el nombre de cada proyecto.
+
+# Conclusiones
+
+1. **La UNAS ejecutó el 99.1 % de su presupuesto en 2025** (S/ 101.7 millones de S/ 102.7 millones), muy por encima del conjunto de universidades (`r sprintf("%.1f", avance_conjunto)` %). Quedó en el **puesto `r puesto_unas` de `r nrow(ranking)`** universidades con PIM de S/ 20 millones o más.
+2. **Su perfil de gasto es distinto**: destina el 40 % del presupuesto a inversiones, frente al 27 % del conjunto, y aun así ejecutó sus proyectos al 99 %.
+3. **El tamaño del presupuesto no explica la ejecución**; lo que sí marca diferencia es la ejecución de proyectos, que en el conjunto es mucho menor que la de las actividades.
+4. **Diciembre concentra casi la quinta parte del gasto anual**, como esperábamos.
+5. **Las cifras son confiables**: coinciden con la Consulta Amigable del MEF en las `r nrow(ca)` universidades (`r n_coinc` al sol y `r n_red` con diferencias de redondeo).
+
+**Limitaciones:** el avance mide cuánto se gastó, no si se gastó bien; y analizamos un solo año.
