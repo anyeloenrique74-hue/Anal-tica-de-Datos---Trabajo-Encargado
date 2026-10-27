@@ -1,6 +1,7 @@
 TRABAJO ENCARGADO - ANALÍTICA DE DATOS
-Análisis exploratorio de la ejecución presupuestal de las universidades
-públicas del Perú, 2025: caso de la Universidad Nacional Agraria de la Selva
+Ejecución presupuestal de la Universidad Nacional Agraria de la Selva en
+comparación con las universidades públicas del Perú, 2025
+(Análisis exploratorio de datos)
 
 Integrantes:
   Elida Andrea Campos Flores

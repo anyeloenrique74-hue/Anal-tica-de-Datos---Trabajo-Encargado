@@ -45,7 +45,7 @@ crossref:
     image("logo_unas.png", width: 3cm, height: 4cm, fit: "contain"),
     image("logo_fiis.png", width: 3cm, height: 4cm, fit: "contain"))
   #v(1.2cm)
-  #block(width: 14cm)[#text(weight: "bold")[ANÁLISIS EXPLORATORIO DE LA EJECUCIÓN PRESUPUESTAL DE LAS UNIVERSIDADES PÚBLICAS DEL PERÚ, 2025: CASO DE LA UNIVERSIDAD NACIONAL AGRARIA DE LA SELVA]]
+  #block(width: 14cm)[#text(weight: "bold")[EJECUCIÓN PRESUPUESTAL DE LA UNIVERSIDAD NACIONAL AGRARIA DE LA SELVA EN COMPARACIÓN CON LAS UNIVERSIDADES PÚBLICAS DEL PERÚ, 2025]]
   #v(1cm)
   Informe del análisis exploratorio de datos \
   Trabajo encargado del curso de Analítica de Datos

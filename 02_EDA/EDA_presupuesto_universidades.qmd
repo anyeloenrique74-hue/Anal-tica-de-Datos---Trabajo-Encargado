@@ -1,6 +1,6 @@
 ---
-title: "Análisis exploratorio: ejecución presupuestal de las universidades públicas en 2025"
-subtitle: "Caso principal: Universidad Nacional Agraria de la Selva (UNAS)"
+title: "Ejecución presupuestal de la Universidad Nacional Agraria de la Selva en comparación con las universidades públicas del Perú, 2025"
+subtitle: "Cuaderno del análisis exploratorio de datos"
 lang: es
 author:
   - Elida Andrea Campos Flores
